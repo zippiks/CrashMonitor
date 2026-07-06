@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{96ddf8af-c5b8-4421-8edb-db1bbac0aa42}</ProjectGuid>
-    <RootNamespace>CrashApp</RootNamespace>
+    <ProjectGuid>{4c1d2f4d-722f-412f-b4d9-0a9516a2d4a0}</ProjectGuid>
+    <RootNamespace>Agent</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -128,7 +128,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="CrashApp.cpp" />
+    <ClCompile Include="Agent.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
