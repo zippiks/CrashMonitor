@@ -32,7 +32,7 @@ int main()
 
     // Искусственный краш
     int* ptr = nullptr;
-    *ptr = 42;
+    *ptr = 67;
 
     return 0;
 }
