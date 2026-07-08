@@ -2,130 +2,425 @@
 #include <fstream>
 #include <filesystem>
 #include <windows.h>
+#include <DbgHelp.h>
+#include <ctime>
+#include <string>
 
-int main()
+
+std::string GetCurrentDateTime()
 {
-    std::cout << "Agent started." << std::endl;
+    std::time_t now = std::time(nullptr);
 
-    // Формируем путь к файлу Agent.log
-    std::filesystem::path logPath =
-        std::filesystem::current_path() / "Agent.log";
+    std::tm localTime{};
+    localtime_s(&localTime, &now);
 
-    
-    std::ofstream log(logPath);
+    char buffer[20];
 
-    log << "Agent started." << std::endl;
+    std::strftime(
+        buffer,
+        sizeof(buffer),
+        "%Y-%m-%d %H:%M:%S",
+        &localTime
+    );
 
-    std::cout << "Log file created: " << logPath << std::endl;
-
-
-    
-
-    STARTUPINFO si{};
-    si.cb = sizeof(si);
-
-    PROCESS_INFORMATION pi{};
+    return std::string(buffer);
+}
 
 
-    // Командная строка для запуска CrashApp
-    wchar_t commandLine[] = L"CrashApp.exe";
+std::string GetFileTime()
+{
+    std::time_t now = std::time(nullptr);
+
+    std::tm localTime{};
+    localtime_s(&localTime, &now);
+
+    char buffer[20];
+
+    std::strftime(
+        buffer,
+        sizeof(buffer),
+        "%Y-%m-%d_%H-%M-%S",
+        &localTime
+    );
+
+    return std::string(buffer);
+}
 
 
-    // Запуск CrashApp
-    BOOL result = CreateProcessW(
-        nullptr,        // имя исполняемого файла
-        commandLine,    // командная строка
-        nullptr,        // атрибуты безопасности процесса
-        nullptr,        // атрибуты безопасности потока
-        FALSE,          // наследование дескрипторов
-        0,              // флаги создания
-        nullptr,        // окружение
-        nullptr,        // рабочая директория
-        &si,            // настройки запуска
-        &pi             // информация о созданном процессе
+
+void WriteLog(
+    std::ofstream& log,
+    const std::string& message
+)
+{
+    log
+        << "["
+        << GetCurrentDateTime()
+        << "] "
+        << message
+        << std::endl;
+}
+
+
+
+void WriteLog(
+    std::ofstream& log,
+    const std::string& message,
+    DWORD code
+)
+{
+    log
+        << "["
+        << GetCurrentDateTime()
+        << "] "
+        << message
+        << ": 0x"
+        << std::uppercase
+        << std::hex
+        << code
+        << std::dec
+        << std::endl;
+}
+
+
+
+std::string GetExceptionDescription(DWORD code)
+{
+    switch (code)
+    {
+    case EXCEPTION_ACCESS_VIOLATION:
+        return "Access violation";
+
+    case EXCEPTION_BREAKPOINT:
+        return "Breakpoint";
+
+    case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        return "Integer divide by zero";
+
+    default:
+        return "Unknown exception";
+    }
+}
+
+
+
+bool CreateDump(
+    HANDLE processHandle,
+    DWORD processId,
+    const std::filesystem::path& dumpPath
+)
+{
+    HANDLE dumpFile = CreateFileW(
+        dumpPath.c_str(),
+        GENERIC_WRITE,
+        0,
+        nullptr,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        nullptr
     );
 
 
-    if (result)
+    if (dumpFile == INVALID_HANDLE_VALUE)
     {
-        std::cout << "CrashApp started successfully." << std::endl;
-
-        log << "CrashApp started successfully." << std::endl;
-
-
-        std::cout << "Waiting for CrashApp..." << std::endl;
-
-        log << "Waiting for CrashApp..." << std::endl;
+        return false;
+    }
 
 
-        WaitForSingleObject(
-            pi.hProcess,
-            INFINITE
+    BOOL result = MiniDumpWriteDump(
+        processHandle,
+        processId,
+        dumpFile,
+        MiniDumpWithFullMemory,
+        nullptr,
+        nullptr,
+        nullptr
+    );
+
+
+    CloseHandle(dumpFile);
+
+
+    return result == TRUE;
+}
+
+
+
+bool AskRestart()
+{
+    int result = MessageBoxW(
+        nullptr,
+        L"CrashApp завершила работу с ошибкой.\n\nПерезапустить программу?",
+        L"Crash Monitor",
+        MB_YESNO | MB_ICONERROR
+    );
+
+
+    return result == IDYES;
+}
+
+
+
+bool StartCrashApp(
+    PROCESS_INFORMATION& pi
+)
+{
+    STARTUPINFO si{};
+    si.cb = sizeof(si);
+
+
+    wchar_t commandLine[] = L"CrashApp.exe";
+
+
+    return CreateProcessW(
+        nullptr,
+        commandLine,
+        nullptr,
+        nullptr,
+        FALSE,
+        DEBUG_ONLY_THIS_PROCESS,
+        nullptr,
+        nullptr,
+        &si,
+        &pi
+    );
+}
+
+
+
+int main()
+{
+    std::filesystem::path basePath =
+        std::filesystem::current_path();
+
+
+    std::ofstream log(
+        basePath / "Agent.log"
+    );
+
+
+    std::filesystem::path dumpDirectory =
+        basePath / "CrashReports";
+
+
+    if (!std::filesystem::exists(dumpDirectory))
+    {
+        std::filesystem::create_directory(dumpDirectory);
+    }
+
+
+    WriteLog(
+        log,
+        "Agent started."
+    );
+
+
+
+    bool restart = true;
+
+
+    while (restart)
+    {
+
+        PROCESS_INFORMATION pi{};
+
+
+        if (!StartCrashApp(pi))
+        {
+            WriteLog(
+                log,
+                "Failed to start CrashApp."
+            );
+
+            break;
+        }
+
+
+
+        WriteLog(
+            log,
+            "CrashApp started."
         );
 
 
-        std::cout << "CrashApp finished." << std::endl;
+        WriteLog(
+            log,
+            "Process ID: "
+            +
+            std::to_string(pi.dwProcessId)
+        );
 
-        log << "CrashApp finished." << std::endl;
 
-        DWORD exitCode = 0;
 
-        if (GetExitCodeProcess(pi.hProcess, &exitCode))
+        DEBUG_EVENT debugEvent{};
+
+        bool running = true;
+
+        bool crashed = false;
+
+        bool dumpCreated = false;
+
+
+
+        while (running)
         {
-            std::cout << "Exit code: 0x"
-                << std::uppercase
-                << std::hex
-                << exitCode
-                << std::dec
-                << std::endl;
 
-
-            log << "Exit code: 0x"
-                << std::uppercase
-                << std::hex
-                << exitCode
-                << std::dec
-                << std::endl;
-
-
-            if (exitCode == 0)
+            if (WaitForDebugEvent(
+                &debugEvent,
+                INFINITE
+            ))
             {
-                std::cout << "Application closed normally."
-                    << std::endl;
 
-                log << "Application closed normally."
-                    << std::endl;
-            }
-            else if (exitCode == 0xC0000005)
-            {
-                std::cout << "Application crashed: access violation."
-                    << std::endl;
+                switch (debugEvent.dwDebugEventCode)
+                {
 
-                log << "Application crashed: access violation."
-                    << std::endl;
-            }
-            else
-            {
-                std::cout << "Application terminated with error."
-                    << std::endl;
+                case CREATE_PROCESS_DEBUG_EVENT:
 
-                log << "Application terminated with error."
-                    << std::endl;
+                    if (debugEvent.u.CreateProcessInfo.hFile)
+                    {
+                        CloseHandle(
+                            debugEvent.u.CreateProcessInfo.hFile
+                        );
+                    }
+
+                    break;
+
+
+
+                case EXCEPTION_DEBUG_EVENT:
+                {
+                    DWORD code =
+                        debugEvent
+                        .u
+                        .Exception
+                        .ExceptionRecord
+                        .ExceptionCode;
+
+
+
+                    WriteLog(
+                        log,
+                        "Exception",
+                        code
+                    );
+
+
+                    WriteLog(
+                        log,
+                        GetExceptionDescription(code)
+                    );
+
+
+
+                    if (code == EXCEPTION_ACCESS_VIOLATION
+                        &&
+                        !dumpCreated)
+                    {
+
+                        crashed = true;
+
+
+                        std::filesystem::path dumpPath =
+                            dumpDirectory
+                            /
+                            (
+                                "CrashApp_"
+                                +
+                                GetFileTime()
+                                +
+                                ".dmp"
+                                );
+
+
+
+                        if (CreateDump(
+                            pi.hProcess,
+                            pi.dwProcessId,
+                            dumpPath
+                        ))
+                        {
+
+                            WriteLog(
+                                log,
+                                "Dump created: "
+                                +
+                                dumpPath.string()
+                            );
+
+
+                            dumpCreated = true;
+                        }
+                    }
+
+                    break;
+                }
+
+
+
+                case EXIT_PROCESS_DEBUG_EVENT:
+
+                    running = false;
+
+                    break;
+                }
+
+
+
+                DWORD status =
+                    DBG_CONTINUE;
+
+
+                if (debugEvent.dwDebugEventCode
+                    ==
+                    EXCEPTION_DEBUG_EVENT)
+                {
+                    status =
+                        DBG_EXCEPTION_NOT_HANDLED;
+                }
+
+
+
+                ContinueDebugEvent(
+                    debugEvent.dwProcessId,
+                    debugEvent.dwThreadId,
+                    status
+                );
             }
         }
+
+
+
+        CloseHandle(
+            pi.hProcess
+        );
+
+
+        CloseHandle(
+            pi.hThread
+        );
+
+
+
+        if (crashed)
+        {
+            restart = AskRestart();
+        }
+        else
+        {
+            restart = false;
+        }
     }
-    else
-    {
-        std::cout << "Failed to start CrashApp." << std::endl;
-
-        log << "Failed to start CrashApp." << std::endl;
-    }
-    
 
 
+
+    WriteLog(
+        log,
+        "Agent finished."
+    );
 
 
     log.close();
+
 
     return 0;
 }
